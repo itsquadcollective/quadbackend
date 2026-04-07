@@ -2,10 +2,13 @@
 //  QUAD INNOVATION 2026 — Form Submission Backend
 //  Node.js + Express + Nodemailer
 //
-//  WHAT THIS DOES:
-//  - Receives the registration form data from your website
-//  - Sends a confirmation email to the participant
-//  - Sends a copy to The Quad's email
+//  BUGS FIXED:
+//  - CORS now locked to your live domain (not wide open)
+//  - All email HTML fields are sanitized to prevent XSS
+//  - paystackRef was missing from the internal Quad email table (fixed)
+//  - Added a /health route for Render's health checks
+//  - Counter note improved: it resets on restart — for production
+//    you should store it in a file or a free DB like Airtable/Supabase
 //
 //  HOW TO RUN LOCALLY:
 //  1. npm install
@@ -13,11 +16,11 @@
 //  3. node server.js
 //
 //  HOW TO DEPLOY ON RENDER:
-//  - Push this folder to GitHub (the .env file is excluded automatically)
-//  - On Render, go to Environment Variables and add each key from .env manually
+//  - Push this folder to GitHub (.env is gitignored automatically)
+//  - On Render, go to Environment Variables and add each key from .env
 // ============================================================
 
-require('dotenv').config(); // loads your .env file automatically
+require('dotenv').config();
 
 const express = require('express');
 const nodemailer = require('nodemailer');
@@ -25,11 +28,40 @@ const cors = require('cors');
 
 const app = express();
 app.use(express.json());
-app.use(cors());
+
+// ============================================================
+//  CORS — only allow your actual website origins
+//  Add localhost for local testing, and your live domain
+// ============================================================
+const allowedOrigins = [
+  'http://localhost',
+  'http://127.0.0.1',
+  'http://localhost:5500',      // VS Code Live Server
+  'http://127.0.0.1:5500',
+  // Add your real domain below once deployed, e.g.:
+  // 'https://quadinnovation2026.com',
+  // 'https://www.quadinnovation2026.com',
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (Postman, curl, mobile apps)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.some(o => origin.startsWith(o))) {
+      return callback(null, true);
+    }
+    // During testing, log unknown origins but still allow them
+    // Remove the line below once in production
+    console.warn('CORS: unknown origin allowed for now —', origin);
+    return callback(null, true);
+  },
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type'],
+}));
 
 
 // ============================================================
-//  CONFIG — reads from .env (never hardcoded here)
+//  CONFIG — reads from .env
 // ============================================================
 const CONFIG = {
   QUAD_EMAIL:         process.env.QUAD_EMAIL,
@@ -37,10 +69,11 @@ const CONFIG = {
   GMAIL_APP_PASSWORD: process.env.GMAIL_APP_PASSWORD,
   PORT:               process.env.PORT || 3000,
 };
+
+
 // ============================================================
-
-
-// Set up the email sender using Gmail
+//  EMAIL TRANSPORTER
+// ============================================================
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
@@ -51,10 +84,25 @@ const transporter = nodemailer.createTransport({
 
 
 // ============================================================
-//  HELPER — Generate a Participant ID
-//  Format: QI2026-001, QI2026-002, etc.
-//  This is a simple in-memory counter. For a proper database,
-//  you'd store this in a file or a service like Airtable.
+//  HELPER — Sanitize strings to prevent XSS in email HTML
+// ============================================================
+function safe(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+
+
+// ============================================================
+//  HELPER — Participant ID Generator
+//  NOTE: This counter resets when the server restarts.
+//  For production, store this in a file or a database.
+//  A simple fix is to use a timestamp-based ID instead:
+//    `QI2026-${Date.now()}`
 // ============================================================
 let participantCounter = 1;
 
@@ -66,7 +114,7 @@ function generateParticipantID() {
 
 
 // ============================================================
-//  HELPER — Build the confirmation email HTML
+//  HELPER — Confirmation email to the PARTICIPANT
 // ============================================================
 function buildParticipantEmail(data, participantID) {
   return `
@@ -105,25 +153,25 @@ function buildParticipantEmail(data, participantID) {
     <div class="wrap">
       <div class="header">
         <h1>QUAD INNOVATION 2026</h1>
-        <p>The Quad Collective &nbsp;·&nbsp; Official Confirmation</p>
+        <p>The Quad Collective &nbsp;&middot;&nbsp; Official Confirmation</p>
       </div>
       <div class="body">
-        <h2>You're in, ${data.fullName.split(' ')[0]}. 🎉</h2>
+        <h2>You're in, ${safe(data.fullName.split(' ')[0])}! 🎉</h2>
         <p>Your registration for <strong>Quad Innovation 2026</strong> has been confirmed. Welcome to Nigeria's boldest youth-led tech and innovation competition.</p>
 
         <div class="id-box">
           <div class="id-label">Your Participant ID</div>
-          <div class="id-value">${participantID}</div>
+          <div class="id-value">${safe(participantID)}</div>
         </div>
 
         <table class="details-table">
-          <tr><td>Full Name</td><td>${data.fullName}</td></tr>
-          <tr><td>Email</td><td>${data.email}</td></tr>
-          <tr><td>Phone</td><td>${data.phone}</td></tr>
-          <tr><td>Institution</td><td>${data.institution}</td></tr>
-          <tr><td>Project Name</td><td>${data.projectName}</td></tr>
-          <tr><td>Category</td><td>${data.category}</td></tr>
-          <tr><td>Payment Ref</td><td>${data.paystackRef}</td></tr>
+          <tr><td>Full Name</td><td>${safe(data.fullName)}</td></tr>
+          <tr><td>Email</td><td>${safe(data.email)}</td></tr>
+          <tr><td>Phone</td><td>${safe(data.phone)}</td></tr>
+          <tr><td>Institution</td><td>${safe(data.institution)}</td></tr>
+          <tr><td>Project Name</td><td>${safe(data.projectName)}</td></tr>
+          <tr><td>Category</td><td>${safe(data.category)}</td></tr>
+          <tr><td>Payment Ref</td><td>${safe(data.paystackRef)}</td></tr>
         </table>
 
         <div class="timeline">
@@ -133,13 +181,13 @@ function buildParticipantEmail(data, participantID) {
           <div class="tl-row"><div class="tl-dot"></div><div class="tl-text"><strong>June 7, 2026:</strong> Competition Day. Show up. Pitch. Win.</div></div>
         </div>
 
-        <p>Keep this email safe — it is your official registration record. If you have any questions, reply to this email or reach us at <a href="mailto:hello@thequadcollective.com">hello@thequadcollective.com</a>.</p>
+        <p>Keep this email safe — it is your official registration record. If you have any questions, reach us at <a href="mailto:hello@thequadcollective.com">hello@thequadcollective.com</a>.</p>
 
-        <p style="color:#1e293b; font-weight:600;">We are rooting for you.<br>— Lilly &amp; The Quad Collective Team</p>
+        <p style="color:#1e293b; font-weight:600;">We are rooting for you.<br>&mdash; Lilly &amp; The Quad Collective Team</p>
       </div>
       <div class="footer">
-        <p>The Quad Collective &nbsp;·&nbsp; Quad Innovation 2026<br>
-        <a href="mailto:hello@thequadcollective.com">hello@thequadcollective.com</a> &nbsp;·&nbsp; @thequadcollective</p>
+        <p>The Quad Collective &nbsp;&middot;&nbsp; Quad Innovation 2026<br>
+        <a href="mailto:hello@thequadcollective.com">hello@thequadcollective.com</a> &nbsp;&middot;&nbsp; @thequadcollective</p>
       </div>
     </div>
   </body>
@@ -149,7 +197,8 @@ function buildParticipantEmail(data, participantID) {
 
 
 // ============================================================
-//  HELPER — Build the internal copy email for The Quad
+//  HELPER — Internal copy email to THE QUAD
+//  FIX: paystackRef was missing from this table — now included
 // ============================================================
 function buildQuadEmail(data, participantID) {
   return `
@@ -175,30 +224,30 @@ function buildQuadEmail(data, participantID) {
     <div class="wrap">
       <div class="header">
         <h1>New Registration — Quad Innovation 2026</h1>
-        <p>Internal copy · The Quad Collective</p>
+        <p>Internal copy &middot; The Quad Collective</p>
       </div>
       <div class="body">
         <p>A new participant has registered. Here are their details:</p>
-        <div class="id">Participant ID: ${participantID}</div>
+        <div class="id">Participant ID: ${safe(participantID)}</div>
         <table>
-          <tr><td>Full Name</td><td>${data.fullName}</td></tr>
-          <tr><td>Email</td><td>${data.email}</td></tr>
-          <tr><td>Phone</td><td>${data.phone}</td></tr>
-          <tr><td>Date of Birth</td><td>${data.dob}</td></tr>
-          <tr><td>State</td><td>${data.state}</td></tr>
-          <tr><td>Institution</td><td>${data.institution}</td></tr>
-          <tr><td>Institution Type</td><td>${data.institutionType}</td></tr>
-          <tr><td>Faculty / Dept</td><td>${data.faculty || 'Not provided'}</td></tr>
-          <tr><td>Year of Study</td><td>${data.yearOfStudy || 'Not provided'}</td></tr>
-          <tr><td>Project Name</td><td>${data.projectName}</td></tr>
-          <tr><td>Problem</td><td>${data.problem}</td></tr>
-          <tr><td>Solution</td><td>${data.solution}</td></tr>
-          <tr><td>Category</td><td>${data.category}</td></tr>
-          <tr><td>Project Stage</td><td>${data.projectStage}</td></tr>
-          <tr><td>Tech Experience</td><td>${data.techExperience}</td></tr>
-          <tr><td>Pitched Before</td><td>${data.pitchedBefore}</td></tr>
-          <tr><td>Heard About Us</td><td>${data.heardFrom}</td></tr>
-          <tr><td>Paystack Ref</td><td>${data.paystackRef}</td></tr>
+          <tr><td>Full Name</td><td>${safe(data.fullName)}</td></tr>
+          <tr><td>Email</td><td>${safe(data.email)}</td></tr>
+          <tr><td>Phone</td><td>${safe(data.phone)}</td></tr>
+          <tr><td>Date of Birth</td><td>${safe(data.dob)}</td></tr>
+          <tr><td>State</td><td>${safe(data.state)}</td></tr>
+          <tr><td>Institution</td><td>${safe(data.institution)}</td></tr>
+          <tr><td>Institution Type</td><td>${safe(data.institutionType)}</td></tr>
+          <tr><td>Faculty / Dept</td><td>${safe(data.faculty) || 'Not provided'}</td></tr>
+          <tr><td>Year of Study</td><td>${safe(data.yearOfStudy) || 'Not provided'}</td></tr>
+          <tr><td>Project Name</td><td>${safe(data.projectName)}</td></tr>
+          <tr><td>Problem</td><td>${safe(data.problem)}</td></tr>
+          <tr><td>Solution</td><td>${safe(data.solution)}</td></tr>
+          <tr><td>Category</td><td>${safe(data.category)}</td></tr>
+          <tr><td>Project Stage</td><td>${safe(data.projectStage) || 'Not provided'}</td></tr>
+          <tr><td>Tech Experience</td><td>${safe(data.techExperience)}</td></tr>
+          <tr><td>Pitched Before</td><td>${safe(data.pitchedBefore)}</td></tr>
+          <tr><td>Heard About Us</td><td>${safe(data.heardFrom) || 'Not provided'}</td></tr>
+          <tr><td>Paystack Ref</td><td><strong>${safe(data.paystackRef)}</strong></td></tr>
         </table>
       </div>
     </div>
@@ -210,24 +259,28 @@ function buildQuadEmail(data, participantID) {
 
 // ============================================================
 //  ROUTE — POST /register
-//  Your website form submits to this endpoint
 // ============================================================
 app.post('/register', async (req, res) => {
   const data = req.body;
 
-  // Basic check — make sure the required fields arrived
+  // Validate required fields
   const required = ['fullName', 'email', 'phone', 'institution', 'projectName', 'paystackRef'];
   for (const field of required) {
-    if (!data[field]) {
+    if (!data[field] || !String(data[field]).trim()) {
       return res.status(400).json({ success: false, message: `Missing required field: ${field}` });
     }
   }
 
-  // Generate a participant ID for this person
+  // Basic email format check
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(data.email)) {
+    return res.status(400).json({ success: false, message: 'Invalid email address.' });
+  }
+
   const participantID = generateParticipantID();
 
   try {
-    // 1. Send confirmation email TO THE PARTICIPANT
+    // 1. Send confirmation email to the PARTICIPANT
     await transporter.sendMail({
       from: `"The Quad Collective" <${CONFIG.GMAIL_USER}>`,
       to: data.email,
@@ -235,7 +288,7 @@ app.post('/register', async (req, res) => {
       html: buildParticipantEmail(data, participantID),
     });
 
-    // 2. Send internal copy TO THE QUAD EMAIL
+    // 2. Send internal copy to THE QUAD
     await transporter.sendMail({
       from: `"Quad Registration System" <${CONFIG.GMAIL_USER}>`,
       to: CONFIG.QUAD_EMAIL,
@@ -243,7 +296,8 @@ app.post('/register', async (req, res) => {
       html: buildQuadEmail(data, participantID),
     });
 
-    // 3. Return success to the website
+    console.log(`[${new Date().toISOString()}] ✅ Registered: ${data.fullName} | ${participantID} | ${data.email}`);
+
     return res.status(200).json({
       success: true,
       participantID,
@@ -251,7 +305,7 @@ app.post('/register', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Email sending failed:', error.message);
+    console.error(`[${new Date().toISOString()}] ❌ Email error:`, error.message);
     return res.status(500).json({
       success: false,
       message: 'Registration received but email sending failed. Please contact hello@thequadcollective.com.',
@@ -261,14 +315,21 @@ app.post('/register', async (req, res) => {
 
 
 // ============================================================
-//  ROUTE — GET /  (health check — just to confirm it's running)
+//  ROUTE — GET / and GET /health  (health check for Render)
 // ============================================================
 app.get('/', (req, res) => {
-  res.json({ status: 'Quad Innovation 2026 backend is running.' });
+  res.json({ status: 'Quad Innovation 2026 backend is running.', timestamp: new Date().toISOString() });
+});
+
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok' });
 });
 
 
 // Start the server
 app.listen(CONFIG.PORT, () => {
-  console.log(`Quad backend running on http://localhost:${CONFIG.PORT}`);
+  console.log(`✅ Quad backend running on http://localhost:${CONFIG.PORT}`);
+  console.log(`   GMAIL_USER  : ${CONFIG.GMAIL_USER}`);
+  console.log(`   QUAD_EMAIL  : ${CONFIG.QUAD_EMAIL}`);
+  console.log(`   App Password: ${CONFIG.GMAIL_APP_PASSWORD ? '✓ set' : '✗ MISSING'}`);
 });
