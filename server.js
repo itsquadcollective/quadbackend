@@ -89,12 +89,12 @@ function participantEmail(d, id) {
         <div class="tl-row"><div class="dot"></div><div class="tl-text"><strong>Early June:</strong> Shortlisted participants notified with pitch guidelines.</div></div>
         <div class="tl-row"><div class="dot"></div><div class="tl-text"><strong>June 7, 2026:</strong> Competition Day. Show up. Pitch. Win.</div></div>
       </div>
-      <p>Keep this email &mdash; it is your official registration record.<br>Questions? <a href="mailto:hello@thequadcollective.com" style="color:#3b82f6">hello@thequadcollective.com</a></p>
+      <p>Keep this email &mdash; it is your official registration record.<br>Questions? <a href="mailto:itsquadcollective@gmail.com" style="color:#3b82f6">itsquadcollective@gmail.com</a></p>
       <p style="color:#1e293b;font-weight:600">We are rooting for you.<br>&mdash; Lilly &amp; The Quad Collective Team</p>
     </div>
     <div class="ft">
       <p>The Quad Collective &middot; Quad Innovation 2026<br>
-      <a href="mailto:hello@thequadcollective.com">hello@thequadcollective.com</a> &middot; @thequadcollective</p>
+      <a href="mailto:itsquadcollective@gmail.com">itsquadcollective@gmail.com</a> &middot; @thequadcollective</p>
     </div>
   </div></body></html>`;
 }
@@ -184,7 +184,7 @@ app.post('/register', async (req, res) => {
     console.error('❌ Email error:', err.message);
     return res.status(500).json({
       success: false,
-      message: 'Registration received but email failed. Contact hello@thequadcollective.com',
+      message: 'Registration received but email failed. Contact itsquadcollective@gmail.com',
     });
   }
 });
